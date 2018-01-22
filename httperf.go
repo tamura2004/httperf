@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	_ "github.com/motemen/go-loghttp/global"
 	"io"
 	"log"
 	"math/rand"
