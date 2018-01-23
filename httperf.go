@@ -94,7 +94,7 @@ func monitor(ch chan result) {
 }
 
 func sleep() {
-	time.Sleep(time.Duration(float64(p.duration) * rand.ExpFloat64()))
+	time.Sleep(p.duration * time.Duration(rand.ExpFloat64()))
 }
 
 func target(n int, ch chan result) {
@@ -140,7 +140,7 @@ func init() {
 	flag.Parse()
 
 	log.Println("start")
-	log.Printf("url=%s, count=%d, user=%d, duration=%s", p.url, p.count, p.user, p.duration)
+	log.Printf("url=%s, proxy=%s, count=%d, user=%d, duration=%s", p.url, p.proxy, p.count, p.user, p.duration)
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
@@ -155,10 +155,5 @@ func init() {
 		tr.Proxy = http.ProxyURL(proxyURL)
 	}
 
-	// jar, err := cookiejar.New(nil)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// client = &http.Client{Transport: tr, Jar: jar}
 	client = &http.Client{Transport: tr}
 }
