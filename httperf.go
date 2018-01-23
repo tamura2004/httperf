@@ -1,11 +1,13 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"io"
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"sync"
@@ -20,6 +22,7 @@ type result struct {
 
 type parm struct {
 	url      string
+	proxy    string
 	count    int
 	user     int
 	duration time.Duration
@@ -40,6 +43,8 @@ var (
 	logfile *os.File
 	wg      *sync.WaitGroup = &sync.WaitGroup{}
 )
+
+var client *http.Client
 
 func main() {
 	defer logfile.Close()
@@ -97,7 +102,7 @@ func target(n int, ch chan result) {
 		sleep()
 
 		start := time.Now()
-		res, err := http.Get(p.url)
+		res, err := client.Get(p.url)
 
 		if err != nil {
 			log.Fatal(err)
@@ -128,6 +133,7 @@ func init() {
 
 	// get command line option
 	flag.StringVar(&p.url, "url", "https://www.google.com/teapot", "url")
+	flag.StringVar(&p.proxy, "proxy", "", "proxy")
 	flag.IntVar(&p.count, "count", 3, "num of measure per user")
 	flag.IntVar(&p.user, "user", 3, "num of user")
 	flag.DurationVar(&p.duration, "duration", 3*time.Second, "average duration between measure by user")
@@ -135,4 +141,24 @@ func init() {
 
 	log.Println("start")
 	log.Printf("url=%s, count=%d, user=%d, duration=%s", p.url, p.count, p.user, p.duration)
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+	if p.proxy != "" {
+		proxyURL, err := url.Parse(p.proxy)
+		if err != nil {
+			log.Fatal(err)
+		}
+		tr.Proxy = http.ProxyURL(proxyURL)
+	}
+
+	// jar, err := cookiejar.New(nil)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// client = &http.Client{Transport: tr, Jar: jar}
+	client = &http.Client{Transport: tr}
 }
