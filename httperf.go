@@ -18,6 +18,7 @@ type result struct {
 	duration time.Duration
 	status   string
 	user     int
+	ix       int
 }
 
 type parm struct {
@@ -26,6 +27,7 @@ type parm struct {
 	count    int
 	user     int
 	duration time.Duration
+	wait     time.Duration
 }
 
 var p parm
@@ -52,7 +54,7 @@ func main() {
 	ch := make(chan result)
 	go monitor(ch)
 
-	wg.Add(p.user * p.count)
+	wg.Add(p.user)
 
 	for i := 0; i < p.user; i++ {
 		go target(i, ch)
@@ -81,41 +83,47 @@ func monitor(ch chan result) {
 	for {
 		select {
 		case r := <-ch:
-			log.Println(r.duration, r.user, r.status)
+			log.Println(r.duration, r.user, r.ix, r.status)
 			key := time.Now().Format("2006/01/02 15:04:05")
 			c.tps[key]++
 			key = time.Now().Format("2006/01/02 15:04")
 			c.tpm[key]++
 			c.count++
 			c.total += r.duration
-			wg.Done()
 		}
 	}
 }
 
-func sleep() {
-	time.Sleep(p.duration * time.Duration(rand.ExpFloat64()))
+func sleep(d time.Duration) {
+	time.Sleep(d * time.Duration(rand.ExpFloat64()))
 }
 
 func target(n int, ch chan result) {
+	defer wg.Done()
 	for i := 0; i < p.count; i++ {
-		sleep()
+		sleep(p.duration)
 
 		start := time.Now()
-		res, err := client.Get(p.url)
 
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		defer res.Body.Close()
+		res := get()
 
 		ch <- result{
 			duration: time.Since(start),
 			status:   res.Status,
 			user:     n,
+			ix:       i,
 		}
 	}
+}
+
+func get() *http.Response {
+	res, err := client.Get(p.url)
+	defer res.Body.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	sleep(p.wait)
+	return res
 }
 
 func init() {
@@ -137,6 +145,7 @@ func init() {
 	flag.IntVar(&p.count, "count", 3, "num of measure per user")
 	flag.IntVar(&p.user, "user", 3, "num of user")
 	flag.DurationVar(&p.duration, "duration", 3*time.Second, "average duration between measure by user")
+	flag.DurationVar(&p.wait, "wait", 3*time.Second, "average wait between http session start and close")
 	flag.Parse()
 
 	log.Println("start")
@@ -146,6 +155,7 @@ func init() {
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
+		MaxIdleConnsPerHost: 128,
 	}
 	if p.proxy != "" {
 		proxyURL, err := url.Parse(p.proxy)
