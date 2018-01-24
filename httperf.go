@@ -3,7 +3,9 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"github.com/tamura2004/httperf/slow"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -26,8 +28,8 @@ type parm struct {
 	proxy    string
 	count    int
 	user     int
+	bps      int
 	duration time.Duration
-	wait     time.Duration
 }
 
 var p parm
@@ -54,9 +56,8 @@ func main() {
 	ch := make(chan result)
 	go monitor(ch)
 
-	wg.Add(p.user)
-
 	for i := 0; i < p.user; i++ {
+		wg.Add(1)
 		go target(i, ch)
 	}
 	wg.Wait()
@@ -98,32 +99,36 @@ func sleep(d time.Duration) {
 	time.Sleep(d * time.Duration(rand.ExpFloat64()))
 }
 
-func target(n int, ch chan result) {
+func target(userID int, ch chan result) {
 	defer wg.Done()
 	for i := 0; i < p.count; i++ {
 		sleep(p.duration)
 
-		start := time.Now()
-
-		res := get()
+		status, duration := get(userID)
 
 		ch <- result{
-			duration: time.Since(start),
-			status:   res.Status,
-			user:     n,
+			duration: duration,
+			status:   status,
+			user:     userID,
 			ix:       i,
 		}
 	}
 }
 
-func get() *http.Response {
+func get(userID int) (status string, duration time.Duration) {
+	start := time.Now()
 	res, err := client.Get(p.url)
-	defer res.Body.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
-	sleep(p.wait)
-	return res
+	duration = time.Since(start)
+	if userID == 0 {
+		io.Copy(os.Stdout, slow.NewReader(res.Body, p.bps))
+	} else {
+		io.Copy(ioutil.Discard, slow.NewReader(res.Body, p.bps))
+	}
+	res.Body.Close()
+	return
 }
 
 func init() {
@@ -140,22 +145,29 @@ func init() {
 	c.tpm = make(map[string]int)
 
 	// get command line option
-	flag.StringVar(&p.url, "url", "https://www.google.com/teapot", "url")
+	flag.StringVar(&p.url, "url", "http://192.168.10.32/hello/world.txt", "url")
 	flag.StringVar(&p.proxy, "proxy", "", "proxy")
 	flag.IntVar(&p.count, "count", 3, "num of measure per user")
 	flag.IntVar(&p.user, "user", 3, "num of user")
 	flag.DurationVar(&p.duration, "duration", 3*time.Second, "average duration between measure by user")
-	flag.DurationVar(&p.wait, "wait", 3*time.Second, "average wait between http session start and close")
+	flag.IntVar(&p.bps, "bps", 3, "bytes par sec to read from http response body")
 	flag.Parse()
 
 	log.Println("start")
-	log.Printf("url=%s, proxy=%s, count=%d, user=%d, duration=%s", p.url, p.proxy, p.count, p.user, p.duration)
+	log.Printf("url=%s, proxy=%s, count=%d, user=%d, bps=%d, duration=%s",
+		p.url,
+		p.proxy,
+		p.count,
+		p.user,
+		p.bps,
+		p.duration,
+	)
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
-		MaxIdleConnsPerHost: 128,
+		MaxIdleConnsPerHost: 1024,
 	}
 	if p.proxy != "" {
 		proxyURL, err := url.Parse(p.proxy)
