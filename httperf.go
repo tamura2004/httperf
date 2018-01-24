@@ -122,10 +122,19 @@ func get(userID int) (status string, duration time.Duration) {
 		log.Fatal(err)
 	}
 	duration = time.Since(start)
-	if userID == 0 {
-		io.Copy(os.Stdout, slow.NewReader(res.Body, p.bps))
+
+	var in io.Reader
+
+	if p.bps == 0 {
+		in = res.Body
 	} else {
-		io.Copy(ioutil.Discard, slow.NewReader(res.Body, p.bps))
+		in = slow.NewReader(res.Body, p.bps)
+	}
+
+	if userID == 0 {
+		io.Copy(os.Stdout, in)
+	} else {
+		io.Copy(ioutil.Discard, in)
 	}
 	res.Body.Close()
 	return
@@ -150,7 +159,7 @@ func init() {
 	flag.IntVar(&p.count, "count", 3, "num of measure per user")
 	flag.IntVar(&p.user, "user", 3, "num of user")
 	flag.DurationVar(&p.duration, "duration", 3*time.Second, "average duration between measure by user")
-	flag.IntVar(&p.bps, "bps", 3, "bytes par sec to read from http response body")
+	flag.IntVar(&p.bps, "bps", 0, "bytes par sec to read for slow reader, if bps is 0 then not use slow reader")
 	flag.Parse()
 
 	log.Println("start")
@@ -167,7 +176,7 @@ func init() {
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
-		MaxIdleConnsPerHost: 1024,
+		MaxIdleConnsPerHost: 2048,
 	}
 	if p.proxy != "" {
 		proxyURL, err := url.Parse(p.proxy)
