@@ -54,6 +54,7 @@ func main() {
 	defer logfile.Close()
 
 	ch := make(chan result)
+	wg.Add(1)
 	go monitor(ch)
 
 	for i := 0; i < p.user; i++ {
@@ -81,6 +82,7 @@ func logMap(m map[string]int, label string) {
 }
 
 func monitor(ch chan result) {
+	defer wg.Done()
 	for {
 		select {
 		case r := <-ch:
