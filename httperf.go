@@ -168,6 +168,7 @@ func initOption() {
 	flag.BoolVar(&p.varbose, "varbose", false, "display stdout string read from body")
 	flag.Parse()
 
+	log.Printf("%#v\n", p)
 	log.Println("start")
 	log.Printf("url=%s, proxy=%s, count=%d, user=%d, bps=%d, duration=%s, varbose=%v",
 		p.url,
