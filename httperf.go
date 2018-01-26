@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"github.com/tamura2004/httperf/ctr"
+	"github.com/tamura2004/httperf/ns"
 	"github.com/tamura2004/httperf/slow"
 	"io"
 	"io/ioutil"
@@ -32,6 +33,7 @@ type parm struct {
 	bps      int
 	duration time.Duration
 	varbose  bool
+	agent    string
 }
 
 var p parm
@@ -54,10 +56,12 @@ func main() {
 	ch.res = make(chan result, 2048)
 
 	for i := 0; i < p.user; i++ {
+		time.Sleep(100 * time.Millisecond)
 		wg.Add(1)
 		go target(i)
 	}
 
+	go ns.Log()
 	monitor()
 }
 
@@ -84,6 +88,10 @@ func target(userID int) {
 	}
 }
 
+func sleep(d time.Duration) {
+	time.Sleep(d * time.Duration(rand.ExpFloat64()))
+}
+
 func monitor() {
 	c := ctr.New()
 
@@ -97,7 +105,7 @@ func monitor() {
 			c.TrUp(ctr.TPS)
 			c.TrUp(ctr.TPM)
 		} else {
-			log.Println(r.duration, r.user, r.ix, r.status)
+			log.Println(r.duration, c.Multi, r.user, r.ix, r.status)
 			c.CountUp()
 			c.AddDuration(r.duration)
 		}
@@ -109,18 +117,24 @@ func monitor() {
 	}
 }
 
-func sleep(d time.Duration) {
-	time.Sleep(d * time.Duration(rand.ExpFloat64()))
-}
-
 func get(userID int) (status string, duration time.Duration) {
+	req, err := http.NewRequest("GET", p.url, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if p.agent != "" {
+		req.Header.Set("User-Agent", p.agent)
+	}
+
 	start := time.Now()
-	res, err := client.Get(p.url)
+	res, err := client.Do(req)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer res.Body.Close()
 	duration = time.Since(start)
+	status = res.Status
 
 	bodyHandler(res.Body, userID)
 
@@ -134,13 +148,19 @@ func bodyHandler(body io.Reader, userID int) {
 
 	var out io.Writer = ioutil.Discard
 	if userID == 0 && p.varbose {
-		out = os.Stdout
+		name := time.Now().Format("index20060102150405.html")
+		file, err := os.OpenFile(name, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+		if err != nil {
+			panic("cannot open log logfile:" + err.Error())
+		}
+		out = io.MultiWriter(file, os.Stdout)
 	}
 
 	io.Copy(out, body)
 }
 
 func init() {
+	rand.Seed(time.Now().UnixNano())
 	initLog()
 	initOption()     // use log
 	initHttpClient() // use option
@@ -148,7 +168,7 @@ func init() {
 
 // initialize log
 func initLog() {
-	name := time.Now().Format("20060102.log")
+	name := time.Now().Format("log20060102.log")
 	logfile, err := os.OpenFile(name, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
 		panic("cannot open log logfile:" + err.Error())
@@ -165,7 +185,8 @@ func initOption() {
 	flag.IntVar(&p.user, "user", 3, "num of user")
 	flag.DurationVar(&p.duration, "duration", 3*time.Second, "average duration between measure by user")
 	flag.IntVar(&p.bps, "bps", 0, "bytes par sec to read for slow reader, if bps is 0 then not use slow reader")
-	flag.BoolVar(&p.varbose, "varbose", false, "display stdout string read from body")
+	flag.BoolVar(&p.varbose, "varbose", false, "display stdout and save file string read from body")
+	flag.StringVar(&p.agent, "agent", "", "user agent")
 	flag.Parse()
 
 	log.Printf("%#v\n", p)
