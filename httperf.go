@@ -1,7 +1,7 @@
 package main
 
 import (
-	"crypto/tls"
+	"github.com/tamura2004/httperf/client"
 	"github.com/tamura2004/httperf/config"
 	"github.com/tamura2004/httperf/counter"
 	"github.com/tamura2004/httperf/netstat"
@@ -11,7 +11,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -25,19 +24,17 @@ type result struct {
 	ix       int
 }
 
-var p config.Config
-
 var ch struct {
 	res   chan result
 	multi chan int
 }
 
 var (
+	p       config.Config
+	cl      *http.Client
 	logfile *os.File
 	wg      *sync.WaitGroup = &sync.WaitGroup{}
 )
-
-var client *http.Client
 
 func main() {
 	defer logfile.Close()
@@ -105,13 +102,8 @@ func monitor() {
 }
 
 func get(userID int) (status string, duration time.Duration) {
-	req, err := http.NewRequest("GET", p.Url, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	start := time.Now()
-	res, err := client.Do(req)
+	res, err := cl.Get(p.Url)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -143,10 +135,11 @@ func bodyHandler(body io.Reader, userID int) {
 }
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
 	initLog()
-	initOption()     // use log
-	initHttpClient() // use option
+	rand.Seed(time.Now().UnixNano())
+	p = config.New("config.toml")
+	log.Printf("%#v", p)
+	cl = client.New(p.Proxy)
 }
 
 // initialize log
@@ -158,28 +151,4 @@ func initLog() {
 	}
 	log.SetOutput(io.MultiWriter(logfile, os.Stdout))
 	log.SetFlags(log.Ldate | log.Ltime)
-}
-
-// initialize command line option
-func initOption() {
-	p = config.New("config.toml")
-	log.Printf("%#v", p)
-}
-
-// initialize http client
-func initHttpClient() {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-		MaxIdleConnsPerHost: 2048,
-	}
-	if p.Proxy != "" {
-		proxyURL, err := url.Parse(p.Proxy)
-		if err != nil {
-			log.Fatal(err)
-		}
-		tr.Proxy = http.ProxyURL(proxyURL)
-	}
-	client = &http.Client{Transport: tr}
 }
