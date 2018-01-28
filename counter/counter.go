@@ -1,4 +1,4 @@
-package ctr
+package counter
 
 import (
 	"sort"
@@ -51,25 +51,31 @@ func (c *Counter) CountDown() {
 	c.Count--
 }
 
-func (c *Counter) TrUp(tr TransactionPerTime) {
+func (c *Counter) TPSUp() {
 	key := time.Now().Format("2006/01/02 15:04:05")
-	if tr == TPM {
-		key = time.Now().Format("2006/01/02 15:04")
-	}
-	c.tr[tr][key]++
+	c.tr[TPS][key]++
+}
+
+func (c *Counter) TPMUp() {
+	key := time.Now().Format("2006/01/02 15:04")
+	c.tr[TPM][key]++
 }
 
 func (c *Counter) AddDuration(d time.Duration) {
 	c.Total += d
 }
 
-func (c *Counter) Each(tr TransactionPerTime, do func(string, int)) {
-	for _, k := range c.Keys(tr) {
-		do(k, c.tr[tr][k])
+func (c *Counter) EachTr(do func(string, string, int)) {
+	for _, tr := range []TransactionPerTime{TPM, TPS} {
+		for _, k := range c.keys(tr) {
+			timestamp := k
+			numOfTr := c.tr[tr][k]
+			do(tr.String(), timestamp, numOfTr)
+		}
 	}
 }
 
-func (c *Counter) Keys(tr TransactionPerTime) []string {
+func (c *Counter) keys(tr TransactionPerTime) []string {
 	keys := []string{}
 	for k := range c.tr[tr] {
 		keys = append(keys, k)

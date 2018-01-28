@@ -2,9 +2,9 @@ package main
 
 import (
 	"crypto/tls"
-	"flag"
-	"github.com/tamura2004/httperf/ctr"
-	"github.com/tamura2004/httperf/ns"
+	"github.com/tamura2004/httperf/config"
+	"github.com/tamura2004/httperf/counter"
+	"github.com/tamura2004/httperf/netstat"
 	"github.com/tamura2004/httperf/slow"
 	"io"
 	"io/ioutil"
@@ -25,18 +25,7 @@ type result struct {
 	ix       int
 }
 
-type parm struct {
-	url      string
-	proxy    string
-	count    int
-	user     int
-	bps      int
-	duration time.Duration
-	varbose  bool
-	agent    string
-}
-
-var p parm
+var p config.Config
 
 var ch struct {
 	res   chan result
@@ -55,26 +44,26 @@ func main() {
 
 	ch.res = make(chan result, 2048)
 
-	for i := 0; i < p.user; i++ {
+	for i := 0; i < p.User; i++ {
 		time.Sleep(100 * time.Millisecond)
 		wg.Add(1)
 		go target(i)
 	}
 
-	go ns.Log()
+	go netstat.Start()
 	monitor()
 }
 
 func target(userID int) {
 	defer wg.Done()
-	for i := 0; i < p.count; i++ {
+	for i := 0; i < p.Count; i++ {
 		ch.res <- result{
 			start: true,
 			user:  userID,
 			ix:    i,
 		}
 
-		sleep(p.duration)
+		sleep(p.Duration.Duration)
 
 		status, duration := get(userID)
 
@@ -93,7 +82,7 @@ func sleep(d time.Duration) {
 }
 
 func monitor() {
-	c := ctr.New()
+	c := counter.New()
 
 	go func() {
 		wg.Wait()
@@ -102,29 +91,23 @@ func monitor() {
 	for r := range ch.res {
 		if r.start {
 			c.MultiUp()
-			c.TrUp(ctr.TPS)
-			c.TrUp(ctr.TPM)
+			c.TPSUp()
+			c.TPMUp()
 		} else {
 			log.Println(r.duration, c.Multi, r.user, r.ix, r.status)
 			c.CountUp()
 			c.AddDuration(r.duration)
 		}
 	}
-	for _, tr := range []ctr.TransactionPerTime{ctr.TPM, ctr.TPS} {
-		c.Each(tr, func(time string, tps int) {
-			log.Printf("%s,%#v,%d", tr, time, tps)
-		})
-	}
+	c.EachTr(func(tr, time string, tp int) {
+		log.Printf("%s,%#v,%d", tr, time, tp)
+	})
 }
 
 func get(userID int) (status string, duration time.Duration) {
-	req, err := http.NewRequest("GET", p.url, nil)
+	req, err := http.NewRequest("GET", p.Url, nil)
 	if err != nil {
 		log.Fatal(err)
-	}
-
-	if p.agent != "" {
-		req.Header.Set("User-Agent", p.agent)
 	}
 
 	start := time.Now()
@@ -142,12 +125,12 @@ func get(userID int) (status string, duration time.Duration) {
 }
 
 func bodyHandler(body io.Reader, userID int) {
-	if p.bps != 0 {
-		body = slow.NewReader(body, p.bps)
+	if p.BPS != 0 {
+		body = slow.NewReader(body, p.BPS)
 	}
 
 	var out io.Writer = ioutil.Discard
-	if userID == 0 && p.varbose {
+	if userID == 0 && p.Varbose {
 		name := time.Now().Format("index20060102150405.html")
 		file, err := os.OpenFile(name, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
 		if err != nil {
@@ -179,27 +162,8 @@ func initLog() {
 
 // initialize command line option
 func initOption() {
-	flag.StringVar(&p.url, "url", "http://192.168.10.32/hello/world.txt", "url")
-	flag.StringVar(&p.proxy, "proxy", "", "proxy")
-	flag.IntVar(&p.count, "count", 3, "num of measure per user")
-	flag.IntVar(&p.user, "user", 3, "num of user")
-	flag.DurationVar(&p.duration, "duration", 3*time.Second, "average duration between measure by user")
-	flag.IntVar(&p.bps, "bps", 0, "bytes par sec to read for slow reader, if bps is 0 then not use slow reader")
-	flag.BoolVar(&p.varbose, "varbose", false, "display stdout and save file string read from body")
-	flag.StringVar(&p.agent, "agent", "", "user agent")
-	flag.Parse()
-
-	log.Printf("%#v\n", p)
-	log.Println("start")
-	log.Printf("url=%s, proxy=%s, count=%d, user=%d, bps=%d, duration=%s, varbose=%v",
-		p.url,
-		p.proxy,
-		p.count,
-		p.user,
-		p.bps,
-		p.duration,
-		p.varbose,
-	)
+	p = config.New("config.toml")
+	log.Printf("%#v", p)
 }
 
 // initialize http client
@@ -210,8 +174,8 @@ func initHttpClient() {
 		},
 		MaxIdleConnsPerHost: 2048,
 	}
-	if p.proxy != "" {
-		proxyURL, err := url.Parse(p.proxy)
+	if p.Proxy != "" {
+		proxyURL, err := url.Parse(p.Proxy)
 		if err != nil {
 			log.Fatal(err)
 		}

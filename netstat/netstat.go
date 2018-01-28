@@ -1,4 +1,4 @@
-package ns
+package netstat
 
 import (
 	"bufio"
@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func Log() {
+func Start() {
 	name := time.Now().Format("tcp20060102.log")
 	logfile, err := os.OpenFile(name, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
@@ -19,9 +19,10 @@ func Log() {
 	defer logfile.Close()
 	fmt.Fprintln(logfile, "DATE,TIME,ESTABLISHED,CLOSE_WAIT,SYN_SENT")
 
-	t := time.NewTicker(10 * time.Second)
-	defer t.Stop()
-	for range t.C {
+	// t := time.NewTicker(10 * time.Second)
+	// defer t.Stop()
+	// for range t.C {
+	for {
 		x, y, z := numEstablished()
 		fmt.Fprintf(
 			logfile,
@@ -31,6 +32,7 @@ func Log() {
 			y,
 			z,
 		)
+		time.Sleep(10 * time.Second)
 	}
 }
 
