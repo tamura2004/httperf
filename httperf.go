@@ -102,6 +102,7 @@ func monitor() {
 	c.EachTr(func(tr, time string, tp int) {
 		log.Printf("%s,%#v,%d", tr, time, tp)
 	})
+	log.Printf("average = %s", c.Total / time.Duration(c.Count))
 }
 
 func get(userID int) (status string, duration time.Duration) {
