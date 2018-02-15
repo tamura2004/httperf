@@ -1,16 +1,22 @@
-package infra
+package client
 
 import (
+	"io"
 	"log"
 	"net/http"
-	"net/url"
 )
 
-type config struct {
-	InsecureSkipVerify bool
-	Proxy              func(*http.Request) (*url.URL, error)
-	Header             map[string]string
-	URL                string
+type Client struct {
+	http.Client
+	*http.Request
+}
+
+func (c *Client) Get() io.Reader {
+	res, err := c.Do(c.Request)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return res.Body
 }
 
 func (c *config) New() Client {
@@ -24,7 +30,7 @@ func (c *config) NewClient() http.Client {
 	return http.Client{
 		&http.Transport{
 			TLSClientConfig: {
-				InsecureSkipVerify: c.InsecureSkipVerify,
+				InsecureSkipVerify: true,
 			},
 			Proxy: c.Proxy,
 		},
